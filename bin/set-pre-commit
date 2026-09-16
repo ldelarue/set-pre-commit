@@ -47,7 +47,7 @@ check_hook_conflicts() {
 }
 
 run_hk() {
-  MISE_MINIMUM_RELEASE_AGE=0s mise x "hk@$HK_VERSION" -- hk "$@"
+    MISE_MINIMUM_RELEASE_AGE=0s mise x "hk@$HK_VERSION" -- hk "$@"
 }
 
 write_header() {
@@ -105,13 +105,13 @@ EOF
 }
 
 render_profile() {
-  profile=${1-}
-  case "$profile" in
-    code) write_code_profile ;;
-    python) write_python_profile ;;
-    '') die "a profile is required; choose code or python" ;;
-    *) die "unknown profile: $profile" ;;
-  esac
+    profile=${1-}
+    case "$profile" in
+        code) write_code_profile ;;
+        python) write_python_profile ;;
+        '') die "a profile is required; choose code or python" ;;
+        *) die "unknown profile: $profile" ;;
+    esac
 }
 
 init_profile() {
@@ -144,8 +144,8 @@ init_profile() {
         run_hk validate
         MISE_MINIMUM_RELEASE_AGE=0s mise use -y "hk@$HK_VERSION"
         if ! mise exec -- hk install --mise; then
-          mise exec -- hk uninstall >/dev/null 2>&1 || true
-          exit 1
+            mise exec -- hk uninstall >/dev/null 2>&1 || true
+            exit 1
         fi
     )
 
@@ -161,9 +161,9 @@ case "$command_name" in
         init_profile "$2"
         ;;
     render)
-      [ "$#" -eq 2 ] || die "render expects exactly one profile"
-      render_profile "$2"
-      ;;
+        [ "$#" -eq 2 ] || die "render expects exactly one profile"
+        render_profile "$2"
+        ;;
     list)
         [ "$#" -eq 1 ] || die "list does not accept arguments"
         printf '%s\n' code python
