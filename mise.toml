@@ -1,0 +1,20 @@
+[tools]
+hk = "2.0.1"
+shellcheck = "0.11.0"
+shfmt = "3.12.0"
+
+[tasks.test]
+description = "Run the shell test suite"
+run = "sh tests/set-pre-commit.sh && sh tests/validate-profiles.sh"
+
+[tasks.lint]
+description = "Lint shell scripts"
+run = "shellcheck bin/set-pre-commit tests/*.sh"
+
+[tasks.format-check]
+description = "Check shell formatting"
+run = "shfmt -d -i 4 -ci bin/set-pre-commit tests/*.sh"
+
+[tasks.check]
+description = "Run all project checks"
+depends = ["format-check", "lint", "test"]

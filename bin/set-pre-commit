@@ -1,0 +1,180 @@
+#!/bin/sh
+
+set -eu
+
+PROGRAM_NAME=set-pre-commit
+VERSION=0.1.0-dev
+HK_VERSION=2.0.1
+
+usage() {
+    cat <<EOF
+Usage:
+  $PROGRAM_NAME init <code|python>
+  $PROGRAM_NAME render <code|python>
+  $PROGRAM_NAME list
+  $PROGRAM_NAME --version
+
+Profiles:
+  code    Conventional Commit validation
+  python  code plus Ruff, ty, and pytest checks
+EOF
+}
+
+die() {
+    printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+    exit 1
+}
+
+repository_root() {
+    command -v git >/dev/null 2>&1 || die "git is required"
+    git rev-parse --show-toplevel 2>/dev/null || die "not inside a Git repository"
+}
+
+check_hook_conflicts() {
+    profile=$1
+    hooks_directory=$(git rev-parse --git-path hooks)
+    case "$hooks_directory" in
+        /*) ;;
+        *) hooks_directory="$(repository_root)/$hooks_directory" ;;
+    esac
+
+    hooks=commit-msg
+    [ "$profile" = python ] && hooks="commit-msg pre-commit"
+    for hook in $hooks; do
+        [ ! -e "$hooks_directory/$hook" ] ||
+            die "$hooks_directory/$hook already exists; remove or migrate it before installing hk"
+    done
+}
+
+run_hk() {
+    mise x "hk@$HK_VERSION" -- hk "$@"
+}
+
+write_header() {
+    cat <<EOF
+amends "package://github.com/jdx/hk/releases/download/v$HK_VERSION/hk@$HK_VERSION#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v$HK_VERSION/hk@$HK_VERSION#/Builtins.pkl"
+
+min_hk_version = "$HK_VERSION"
+EOF
+}
+
+write_code_profile() {
+    write_header
+    cat <<'EOF'
+
+hooks {
+  ["commit-msg"] {
+    steps {
+      ["conventional-commit"] = Builtins.check_conventional_commit
+    }
+  }
+}
+EOF
+}
+
+write_python_profile() {
+    write_header
+    cat <<'EOF'
+
+steps {
+  ["ruff"] = Builtins.ruff
+  ["ruff-format"] = Builtins.ruff_format
+  ["ty"] = Builtins.ty
+}
+
+hooks {
+  ["commit-msg"] {
+    steps {
+      ["conventional-commit"] = Builtins.check_conventional_commit
+    }
+  }
+  ["pre-commit"] {
+    fix = true
+    stage = true
+    stash = "git"
+    steps {
+      ["pytest"] {
+        glob = List("**/*.py", "pyproject.toml", "pytest.ini", "setup.cfg", "tox.ini")
+        check = "pytest"
+      }
+    }
+  }
+}
+EOF
+}
+
+render_profile() {
+  profile=${1-}
+  case "$profile" in
+    code) write_code_profile ;;
+    python) write_python_profile ;;
+    '') die "a profile is required; choose code or python" ;;
+    *) die "unknown profile: $profile" ;;
+  esac
+}
+
+init_profile() {
+    profile=${1-}
+    case "$profile" in
+        code | python) ;;
+        '') die "a profile is required; choose code or python" ;;
+        *) die "unknown profile: $profile" ;;
+    esac
+
+    root=$(repository_root)
+    [ ! -e "$root/hk.pkl" ] || die "$root/hk.pkl already exists; no files were changed"
+    [ ! -e "$root/.config/hk.pkl" ] || die "$root/.config/hk.pkl already exists; no files were changed"
+    [ ! -e "$root/hk.local.pkl" ] || die "$root/hk.local.pkl already exists; no files were changed"
+    [ ! -e "$root/.config/hk.local.pkl" ] || die "$root/.config/hk.local.pkl already exists; no files were changed"
+    command -v mise >/dev/null 2>&1 || die "mise is required; install it from https://mise.jdx.dev"
+    check_hook_conflicts "$profile"
+
+    temporary_file="$root/.hk.pkl.tmp.$$"
+    generated_file="$root/hk.pkl"
+    setup_complete=false
+    trap '[ "$setup_complete" = true ] || rm -f "$generated_file"; rm -f "$temporary_file"' 0
+    trap 'exit 1' HUP INT TERM
+
+    render_profile "$profile" >"$temporary_file"
+
+    mv "$temporary_file" "$generated_file"
+    (
+        cd "$root"
+        run_hk validate
+        mise use -y "hk@$HK_VERSION"
+        if ! mise exec -- hk install --mise; then
+          mise exec -- hk uninstall >/dev/null 2>&1 || true
+          exit 1
+        fi
+    )
+
+    setup_complete=true
+    trap - 0 HUP INT TERM
+    printf 'Created %s with the %s profile and installed hk hooks.\n' "$generated_file" "$profile"
+}
+
+command_name=${1-}
+case "$command_name" in
+    init)
+        [ "$#" -eq 2 ] || die "init expects exactly one profile"
+        init_profile "$2"
+        ;;
+    render)
+      [ "$#" -eq 2 ] || die "render expects exactly one profile"
+      render_profile "$2"
+      ;;
+    list)
+        [ "$#" -eq 1 ] || die "list does not accept arguments"
+        printf '%s\n' code python
+        ;;
+    --version | -V)
+        printf '%s %s\n' "$PROGRAM_NAME" "$VERSION"
+        ;;
+    --help | -h | '')
+        usage
+        ;;
+    *)
+        die "unknown command: $command_name"
+        ;;
+esac
