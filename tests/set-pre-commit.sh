@@ -60,6 +60,22 @@ assert_contains "$python_repository/hk.pkl" '["pytest"]'
 assert_contains "$python_repository/hk.pkl" '["commit-msg"]'
 assert_contains "$python_repository/hk.pkl" '"pyproject.toml"'
 
+(cd "$python_repository" && "$CLI" switch code >/dev/null)
+assert_contains "$python_repository/hk.pkl" 'Builtins.check_conventional_commit'
+if grep -F 'Builtins.ruff' "$python_repository/hk.pkl" >/dev/null; then
+    fail "python checks remain after switching to code"
+fi
+assert_contains "$MISE_LOG" 'exec -- hk uninstall'
+
+(cd "$python_repository" && "$CLI" switch code >/dev/null)
+
+unmanaged_repository=$(new_repository unmanaged-switch)
+printf 'custom\n' >"$unmanaged_repository/hk.pkl"
+if (cd "$unmanaged_repository" && "$CLI" switch code >/dev/null 2>&1); then
+    fail "an unmanaged hk.pkl was replaced"
+fi
+[ "$(cat "$unmanaged_repository/hk.pkl")" = custom ] || fail "unmanaged hk.pkl was modified"
+
 "$CLI" render code >"$TEST_ROOT/rendered-code.pkl"
 cmp "$code_repository/hk.pkl" "$TEST_ROOT/rendered-code.pkl" >/dev/null ||
     fail "rendered and initialized code profiles differ"

@@ -10,6 +10,7 @@ usage() {
     cat <<EOF
 Usage:
   $PROGRAM_NAME init <code|python>
+  $PROGRAM_NAME switch <code|python>
   $PROGRAM_NAME render <code|python>
   $PROGRAM_NAME list
   $PROGRAM_NAME --version
@@ -114,6 +115,21 @@ render_profile() {
     esac
 }
 
+managed_profile() {
+    configuration_file=$1
+    temporary_directory=$2
+
+    for profile in code python; do
+        rendered_file="$temporary_directory/$profile.pkl"
+        render_profile "$profile" >"$rendered_file"
+        if cmp -s "$configuration_file" "$rendered_file"; then
+            printf '%s\n' "$profile"
+            return 0
+        fi
+    done
+    return 1
+}
+
 init_profile() {
     profile=${1-}
     case "$profile" in
@@ -154,11 +170,60 @@ init_profile() {
     printf 'Created %s with the %s profile and installed hk hooks.\n' "$generated_file" "$profile"
 }
 
+switch_profile() {
+    target_profile=${1-}
+    case "$target_profile" in
+        code | python) ;;
+        '') die "a profile is required; choose code or python" ;;
+        *) die "unknown profile: $target_profile" ;;
+    esac
+
+    root=$(repository_root)
+    configuration_file="$root/hk.pkl"
+    [ -f "$configuration_file" ] || die "$configuration_file does not exist; run init instead"
+    command -v mise >/dev/null 2>&1 || die "mise is required; install it from https://mise.jdx.dev"
+
+    temporary_directory="$root/.set-pre-commit.tmp.$$"
+    mkdir "$temporary_directory"
+    trap 'rm -rf "$temporary_directory"' 0
+    trap 'exit 1' HUP INT TERM
+
+    current_profile=$(managed_profile "$configuration_file" "$temporary_directory") ||
+        die "$configuration_file is not managed by $PROGRAM_NAME; no files were changed"
+    if [ "$current_profile" = "$target_profile" ]; then
+        printf 'The %s profile is already active.\n' "$target_profile"
+        return 0
+    fi
+
+    replacement_file="$temporary_directory/replacement.pkl"
+    backup_file="$temporary_directory/original.pkl"
+    render_profile "$target_profile" >"$replacement_file"
+    cp "$configuration_file" "$backup_file"
+    cp "$replacement_file" "$configuration_file"
+
+    if ! (
+        cd "$root"
+        run_hk validate
+        mise exec -- hk uninstall
+        mise exec -- hk install --mise
+    ); then
+        cp "$backup_file" "$configuration_file"
+        (cd "$root" && mise exec -- hk install --mise) >/dev/null 2>&1 || true
+        die "could not activate the $target_profile profile; restored $current_profile"
+    fi
+
+    printf 'Switched from the %s profile to %s.\n' "$current_profile" "$target_profile"
+}
+
 command_name=${1-}
 case "$command_name" in
     init)
         [ "$#" -eq 2 ] || die "init expects exactly one profile"
         init_profile "$2"
+        ;;
+    switch)
+        [ "$#" -eq 2 ] || die "switch expects exactly one profile"
+        switch_profile "$2"
         ;;
     render)
         [ "$#" -eq 2 ] || die "render expects exactly one profile"
