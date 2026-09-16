@@ -47,7 +47,7 @@ check_hook_conflicts() {
 }
 
 run_hk() {
-    mise x "hk@$HK_VERSION" -- hk "$@"
+  MISE_MINIMUM_RELEASE_AGE=0s mise x "hk@$HK_VERSION" -- hk "$@"
 }
 
 write_header() {
@@ -142,7 +142,7 @@ init_profile() {
     (
         cd "$root"
         run_hk validate
-        mise use -y "hk@$HK_VERSION"
+        MISE_MINIMUM_RELEASE_AGE=0s mise use -y "hk@$HK_VERSION"
         if ! mise exec -- hk install --mise; then
           mise exec -- hk uninstall >/dev/null 2>&1 || true
           exit 1

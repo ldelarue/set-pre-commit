@@ -1,5 +1,5 @@
 [tools]
-hk = "2.0.1"
+hk = { version = "2.0.1", minimum_release_age = "0s" }
 shellcheck = "0.11.0"
 shfmt = "3.12.0"
 
